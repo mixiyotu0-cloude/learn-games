@@ -25,6 +25,8 @@
   --radius: 12px;
   --box-border: #1a6fd4;
   --cell-border: #c5d3ea;
+  --multi-select: #ffe0a0;
+  --multi-select-border: #e8a020;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
@@ -290,8 +292,20 @@ h1 {
   cursor: pointer;
   transition: all 0.15s;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 1px;
+  padding: 2px 0;
+}
+
+.num-btn .num-remain {
+  font-family: 'Noto Sans JP', sans-serif;
+  font-size: clamp(0.45rem, 1.6vw, 0.6rem);
+  color: var(--muted);
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: 0;
 }
 
 .num-btn:hover, .num-btn:active { background: var(--accent); color: #fff; border-color: var(--accent); }
@@ -417,8 +431,57 @@ h1 {
 .cell.given.flash-line { animation: givenLineFlash 0.6s ease forwards; }
 .cell.given.flash-box  { animation: givenBoxFlash 0.6s ease forwards; }
 
-/* 全クリア紙吹雪 */
-#confetti-canvas {
+.cell.multi-selected {
+  background: var(--multi-select) !important;
+  outline: 2px solid var(--multi-select-border);
+  outline-offset: -2px;
+  z-index: 2;
+}
+
+/* 複数選択モードバナー */
+#multi-select-bar {
+  display: none;
+  width: 100%;
+  background: #fff8e6;
+  border: 1.5px solid #e8a020;
+  border-radius: 8px;
+  padding: 8px 14px;
+  align-items: center;
+  justify-content: space-between;
+  animation: fadeIn 0.2s ease;
+}
+
+#multi-select-bar.show { display: flex; }
+
+.multi-bar-label {
+  font-size: 0.72rem;
+  color: #a06000;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.multi-bar-count {
+  font-family: 'Bebas Neue', cursive;
+  font-size: 1.1rem;
+  color: #e8a020;
+  letter-spacing: 0.05em;
+}
+
+.btn-multi-cancel {
+  font-size: 0.7rem;
+  color: #a06000;
+  background: none;
+  border: 1px solid #e8a020;
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-family: 'Noto Sans JP', sans-serif;
+}
+
+.btn-multi-cancel:hover { background: #ffecc0; }
+
   position: fixed;
   top: 0; left: 0;
   width: 100%; height: 100%;
@@ -544,6 +607,14 @@ h1 {
     <div class="board" id="board"></div>
   </div>
 
+  <div id="multi-select-bar">
+    <div class="multi-bar-label">
+      ✏ 複数選択中
+      <span class="multi-bar-count" id="multi-count">0</span>マス
+    </div>
+    <button class="btn-multi-cancel" onclick="exitMultiSelect()">✕ 解除</button>
+  </div>
+
   <div class="controls">
     <button class="ctrl-btn" onclick="doUndo()"><span class="ci">↩</span>もどす</button>
     <button class="ctrl-btn" id="memo-btn" onclick="toggleMemo()"><span class="ci">✏</span>メモ</button>
@@ -552,15 +623,15 @@ h1 {
   </div>
 
   <div class="numpad" id="numpad">
-    <button class="num-btn" onclick="inputNum(1)">1</button>
-    <button class="num-btn" onclick="inputNum(2)">2</button>
-    <button class="num-btn" onclick="inputNum(3)">3</button>
-    <button class="num-btn" onclick="inputNum(4)">4</button>
-    <button class="num-btn" onclick="inputNum(5)">5</button>
-    <button class="num-btn" onclick="inputNum(6)">6</button>
-    <button class="num-btn" onclick="inputNum(7)">7</button>
-    <button class="num-btn" onclick="inputNum(8)">8</button>
-    <button class="num-btn" onclick="inputNum(9)">9</button>
+    <button class="num-btn" onclick="inputNum(1)">1<span class="num-remain" id="remain-1"></span></button>
+    <button class="num-btn" onclick="inputNum(2)">2<span class="num-remain" id="remain-2"></span></button>
+    <button class="num-btn" onclick="inputNum(3)">3<span class="num-remain" id="remain-3"></span></button>
+    <button class="num-btn" onclick="inputNum(4)">4<span class="num-remain" id="remain-4"></span></button>
+    <button class="num-btn" onclick="inputNum(5)">5<span class="num-remain" id="remain-5"></span></button>
+    <button class="num-btn" onclick="inputNum(6)">6<span class="num-remain" id="remain-6"></span></button>
+    <button class="num-btn" onclick="inputNum(7)">7<span class="num-remain" id="remain-7"></span></button>
+    <button class="num-btn" onclick="inputNum(8)">8<span class="num-remain" id="remain-8"></span></button>
+    <button class="num-btn" onclick="inputNum(9)">9<span class="num-remain" id="remain-9"></span></button>
   </div>
 </div>
 
@@ -687,6 +758,13 @@ let history = []; // アンドゥ用
 let currentDiff = 'easy';
 let isGameOver = false;
 
+// 複数選択メモ
+let isMultiSelectMode = false;
+let multiSelectedCells = new Set(); // "r,c" 形式のキー
+let longPressTimer = null;
+let longPressTriggered = false;
+const LONG_PRESS_MS = 450;
+
 function startGame(diff) {
   currentDiff = diff;
   document.getElementById('difficulty-screen').style.display = 'none';
@@ -706,9 +784,16 @@ function startGame(diff) {
   mistakes = 0;
   isGameOver = false;
   history = [];
+  isMultiSelectMode = false;
+  multiSelectedCells = new Set();
   completedRows.clear();
   completedCols.clear();
   completedBoxes.clear();
+
+  // オーバーレイを確実に閉じる
+  const ov = document.getElementById('clear-overlay');
+  ov.classList.remove('show');
+  ov.style.display = 'none';
 
   updateMistakeUI();
   document.getElementById('memo-btn').classList.remove('active');
@@ -751,6 +836,11 @@ function renderBoard() {
       cell.dataset.c = c;
 
       if(givenMask[r][c]) cell.classList.add('given');
+
+      // 複数選択ハイライト
+      if(isMultiSelectMode && multiSelectedCells.has(`${r},${c}`)) {
+        cell.classList.add('multi-selected');
+      }
 
       // 選択・ハイライト
       if(selectedCell) {
@@ -816,7 +906,10 @@ function renderBoard() {
         cell.appendChild(memoGrid);
       }
 
-      cell.addEventListener('click', ()=>selectCell(r,c));
+      cell.addEventListener('click', ()=>onCellClick(r, c));
+      cell.addEventListener('touchstart', (e)=>onCellTouchStart(e, r, c), {passive:true});
+      cell.addEventListener('touchend',   (e)=>onCellTouchEnd(e, r, c));
+      cell.addEventListener('contextmenu',(e)=>onCellRightClick(e, r, c));
       board.appendChild(cell);
     }
   }
@@ -828,9 +921,126 @@ function selectCell(r, c) {
   renderBoard();
 }
 
+// ===== 長押し・複数選択 =====
+// ===== 長押し・複数選択 =====
+
+function onCellClick(r, c) {
+  if(isGameOver) return;
+  // 複数選択モード中はclickで自動解除して通常選択に戻る
+  if(isMultiSelectMode) {
+    exitMultiSelect();
+    selectCell(r, c);
+    return;
+  }
+  // 長押し後のclickは無視
+  if(longPressTriggered) { longPressTriggered = false; return; }
+  selectCell(r, c);
+}
+
+function onCellTouchStart(e, r, c) {
+  if(isGameOver) return;
+
+  // 複数選択モード中はタップで選択追加/解除
+  if(isMultiSelectMode) {
+    toggleMultiCell(r, c);
+    return;
+  }
+
+  // メモモード中のみ長押し検出
+  if(isMemoMode) {
+    longPressTriggered = false;
+    longPressTimer = setTimeout(()=>{
+      longPressTriggered = true;
+      enterMultiSelect(r, c);
+    }, LONG_PRESS_MS);
+  }
+}
+
+function onCellRightClick(e, r, c) {
+  e.preventDefault();
+  if(isGameOver) return;
+  if(!isMemoMode) return;
+
+  if(isMultiSelectMode) {
+    toggleMultiCell(r, c);
+  } else {
+    enterMultiSelect(r, c);
+  }
+}
+
+function onCellTouchEnd(e, r, c) {
+  if(longPressTimer) {
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
+  }
+}
+
+function enterMultiSelect(r, c) {
+  isMultiSelectMode = true;
+  multiSelectedCells = new Set();
+  // 長押し元のマスを最初の選択に
+  if(!givenMask[r][c] && userBoard[r][c] === 0) {
+    multiSelectedCells.add(`${r},${c}`);
+  }
+  updateMultiBar();
+  renderBoard();
+}
+
+function toggleMultiCell(r, c) {
+  // 確定済み数字マス・ヒントマスは対象外
+  if(givenMask[r][c] || userBoard[r][c] !== 0) return;
+  const key = `${r},${c}`;
+  if(multiSelectedCells.has(key)) {
+    multiSelectedCells.delete(key);
+  } else {
+    multiSelectedCells.add(key);
+  }
+  updateMultiBar();
+  renderBoard();
+}
+
+function exitMultiSelect() {
+  isMultiSelectMode = false;
+  multiSelectedCells = new Set();
+  document.getElementById('multi-select-bar').className = 'multi-select-bar';
+  renderBoard();
+}
+
+function updateMultiBar() {
+  const bar = document.getElementById('multi-select-bar');
+  if(isMultiSelectMode) {
+    bar.classList.add('show');
+    document.getElementById('multi-count').textContent = multiSelectedCells.size;
+  } else {
+    bar.classList.remove('show');
+  }
+}
+
 // ===== 入力 =====
 function inputNum(n) {
-  if(!selectedCell || isGameOver) return;
+  if(isGameOver) return;
+
+  // 複数選択モード中：一括追加 or 一括削除
+  if(isMultiSelectMode) {
+    if(multiSelectedCells.size === 0) return;
+    // 選択中のいずれかのマスに既にその数字のメモがあれば → 全部消す
+    // 1つも入っていなければ → 全部追加
+    const anyHas = [...multiSelectedCells].some(key => {
+      const [r, c] = key.split(',').map(Number);
+      return !givenMask[r][c] && userBoard[r][c] === 0 && memoBoard[r][c].has(n);
+    });
+    multiSelectedCells.forEach(key => {
+      const [r, c] = key.split(',').map(Number);
+      if(!givenMask[r][c] && userBoard[r][c] === 0) {
+        if(anyHas) memoBoard[r][c].delete(n);
+        else        memoBoard[r][c].add(n);
+      }
+    });
+    renderBoard();
+    return;
+  }
+
+  if(!selectedCell) return;
   const {r, c} = selectedCell;
   if(givenMask[r][c]) return;
 
@@ -928,7 +1138,12 @@ function updateNumpad() {
     if(userBoard[r][c]) counts[userBoard[r][c]]++;
   }
   document.querySelectorAll('.num-btn').forEach((btn,i)=>{
-    btn.classList.toggle('completed', counts[i+1]>=9);
+    const n = i + 1;
+    const remaining = 9 - counts[n];
+    const completed = remaining <= 0;
+    btn.classList.toggle('completed', completed);
+    const span = document.getElementById(`remain-${n}`);
+    if(span) span.textContent = completed ? '' : `残${remaining}`;
   });
 }
 
@@ -1110,7 +1325,9 @@ function showResult(success) {
     startConfetti();
     document.getElementById('co-time').textContent = timeStr;
     document.getElementById('co-mistake').textContent = `${mistakes}回`;
-    document.getElementById('clear-overlay').classList.add('show');
+    const ov2 = document.getElementById('clear-overlay');
+    ov2.style.display = '';
+    ov2.classList.add('show');
   } else {
     document.getElementById('game-screen').style.display = 'none';
     document.getElementById('result-screen').style.display = 'flex';
@@ -1121,12 +1338,18 @@ function showResult(success) {
 }
 
 function closeClearOverlay() {
-  document.getElementById('clear-overlay').classList.remove('show');
-  resetGame();
+  const ov = document.getElementById('clear-overlay');
+  ov.classList.remove('show');
+  ov.style.display = 'none';
+  document.getElementById('game-screen').style.display = 'none';
+  document.getElementById('difficulty-screen').style.display = 'flex';
 }
 
 function resetGame() {
   clearInterval(timerInterval);
+  isMultiSelectMode = false;
+  multiSelectedCells = new Set();
+  document.getElementById('multi-select-bar').classList.remove('show');
   document.getElementById('game-screen').style.display = 'none';
   document.getElementById('result-screen').style.display = 'none';
   document.getElementById('difficulty-screen').style.display = 'flex';
@@ -1134,7 +1357,7 @@ function resetGame() {
 </script>
 <canvas id="confetti-canvas"></canvas>
 
-<div id="clear-overlay">
+<div id="clear-overlay" style="display:none;">
   <div class="clear-title">COMPLETE!</div>
   <div class="clear-sub">PUZZLE SOLVED</div>
   <div class="clear-stats">
