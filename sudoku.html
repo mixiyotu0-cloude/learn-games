@@ -910,6 +910,9 @@ function renderBoard() {
       cell.addEventListener('touchstart', (e)=>onCellTouchStart(e, r, c), {passive:true});
       cell.addEventListener('touchend',   (e)=>onCellTouchEnd(e, r, c));
       cell.addEventListener('contextmenu',(e)=>onCellRightClick(e, r, c));
+      cell.addEventListener('mousedown',  (e)=>onCellMouseDown(e, r, c));
+      cell.addEventListener('mouseup',    (e)=>onCellMouseUp(e, r, c));
+      cell.addEventListener('mouseleave', (e)=>onCellMouseLeave(e));
       board.appendChild(cell);
     }
   }
@@ -926,14 +929,13 @@ function selectCell(r, c) {
 
 function onCellClick(r, c) {
   if(isGameOver) return;
-  // 複数選択モード中はclickで自動解除して通常選択に戻る
-  if(isMultiSelectMode) {
-    exitMultiSelect();
-    selectCell(r, c);
-    return;
-  }
   // 長押し後のclickは無視
   if(longPressTriggered) { longPressTriggered = false; return; }
+  // 複数選択モード中はクリックで選択追加/解除
+  if(isMultiSelectMode) {
+    toggleMultiCell(r, c);
+    return;
+  }
   selectCell(r, c);
 }
 
@@ -957,14 +959,33 @@ function onCellTouchStart(e, r, c) {
 }
 
 function onCellRightClick(e, r, c) {
-  e.preventDefault();
+  e.preventDefault(); // 右クリックメニュー抑制
+}
+
+function onCellMouseDown(e, r, c) {
+  if(e.button !== 0) return; // 左クリックのみ
   if(isGameOver) return;
+  if(isMultiSelectMode) return;
   if(!isMemoMode) return;
 
-  if(isMultiSelectMode) {
-    toggleMultiCell(r, c);
-  } else {
+  longPressTriggered = false;
+  longPressTimer = setTimeout(()=>{
+    longPressTriggered = true;
     enterMultiSelect(r, c);
+  }, LONG_PRESS_MS);
+}
+
+function onCellMouseUp(e, r, c) {
+  if(longPressTimer) {
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
+  }
+}
+
+function onCellMouseLeave(e) {
+  if(longPressTimer) {
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
   }
 }
 
