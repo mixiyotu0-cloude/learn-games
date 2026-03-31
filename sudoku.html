@@ -40,7 +40,6 @@ body {
   flex-direction: column;
   align-items: center;
   padding: 12px 8px 24px;
-  overflow-x: hidden;
 }
 
 h1 {
@@ -503,7 +502,9 @@ h1 {
   gap: 16px;
 }
 
-#clear-overlay.show { display: flex; }
+#clear-overlay.show {
+  display: flex !important;
+}
 
 @keyframes clearTitle {
   0%   { opacity: 0; transform: scale(0.3) rotate(-10deg); }
@@ -619,6 +620,7 @@ h1 {
     <button class="ctrl-btn" onclick="doUndo()"><span class="ci">↩</span>もどす</button>
     <button class="ctrl-btn" id="memo-btn" onclick="toggleMemo()"><span class="ci">✏</span>メモ</button>
     <button class="ctrl-btn" onclick="clearCell()"><span class="ci">✕</span>けす</button>
+    <button class="ctrl-btn" onclick="exportBoard()"><span class="ci">📤</span>保存</button>
     <button class="ctrl-btn" onclick="resetGame()"><span class="ci">⟳</span>やめる</button>
   </div>
 
@@ -792,8 +794,7 @@ function startGame(diff) {
 
   // オーバーレイを確実に閉じる
   const ov = document.getElementById('clear-overlay');
-  ov.classList.remove('show');
-  ov.style.display = 'none';
+  if(ov) ov.remove();
 
   updateMistakeUI();
   document.getElementById('memo-btn').classList.remove('active');
@@ -1023,7 +1024,7 @@ function toggleMultiCell(r, c) {
 function exitMultiSelect() {
   isMultiSelectMode = false;
   multiSelectedCells = new Set();
-  document.getElementById('multi-select-bar').className = 'multi-select-bar';
+  document.getElementById('multi-select-bar').classList.remove('show');
   renderBoard();
 }
 
@@ -1165,6 +1166,39 @@ function updateNumpad() {
     btn.classList.toggle('completed', completed);
     const span = document.getElementById(`remain-${n}`);
     if(span) span.textContent = completed ? '' : `残${remaining}`;
+  });
+}
+
+function exportBoard() {
+  const memoArr = memoBoard.map(row =>
+    row.map(cell => [...cell])
+  );
+  const data = {
+    difficulty: currentDiff,
+    elapsed: elapsedSeconds,
+    mistakes,
+    solution,
+    puzzle,
+    userBoard,
+    memo: memoArr,
+    givenMask,
+  };
+  const json = JSON.stringify(data, null, 2);
+
+  // クリップボードにコピー
+  navigator.clipboard.writeText(json).then(()=>{
+    // ボタンに一時的にフィードバック
+    const btn = document.querySelector('.ctrl-btn:nth-child(4)');
+    const orig = btn.innerHTML;
+    btn.innerHTML = '<span class="ci">✅</span>コピー完了';
+    setTimeout(()=>{ btn.innerHTML = orig; }, 1500);
+  }).catch(()=>{
+    // フォールバック：ダウンロード
+    const blob = new Blob([json], {type:'application/json'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `sudoku_${currentDiff}_${Date.now()}.json`;
+    a.click();
   });
 }
 
@@ -1344,11 +1378,21 @@ function showResult(success) {
   if(success) {
     playSound('clear');
     startConfetti();
-    document.getElementById('co-time').textContent = timeStr;
-    document.getElementById('co-mistake').textContent = `${mistakes}回`;
-    const ov2 = document.getElementById('clear-overlay');
-    ov2.style.display = '';
-    ov2.classList.add('show');
+    let ov = document.getElementById('clear-overlay');
+    if(ov) ov.remove();
+    ov = document.createElement('div');
+    ov.id = 'clear-overlay';
+    ov.style.cssText = 'display:flex;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(26,111,212,0.15);z-index:9999;align-items:center;justify-content:center;flex-direction:column;gap:16px;';
+    ov.innerHTML = `
+      <div class="clear-title">COMPLETE!</div>
+      <div class="clear-sub">PUZZLE SOLVED</div>
+      <div class="clear-stats">
+        <div class="cs-item"><div class="cs-num">${timeStr}</div><div class="cs-label">タイム</div></div>
+        <div class="cs-item"><div class="cs-num">${mistakes}回</div><div class="cs-label">ミス</div></div>
+      </div>
+      <button class="clear-btn" onclick="closeClearOverlay()">PLAY AGAIN</button>
+    `;
+    document.body.appendChild(ov);
   } else {
     document.getElementById('game-screen').style.display = 'none';
     document.getElementById('result-screen').style.display = 'flex';
@@ -1360,8 +1404,7 @@ function showResult(success) {
 
 function closeClearOverlay() {
   const ov = document.getElementById('clear-overlay');
-  ov.classList.remove('show');
-  ov.style.display = 'none';
+  if(ov) ov.remove();
   document.getElementById('game-screen').style.display = 'none';
   document.getElementById('difficulty-screen').style.display = 'flex';
 }
@@ -1377,16 +1420,6 @@ function resetGame() {
 }
 </script>
 <canvas id="confetti-canvas"></canvas>
-
-<div id="clear-overlay" style="display:none;">
-  <div class="clear-title">COMPLETE!</div>
-  <div class="clear-sub">PUZZLE SOLVED</div>
-  <div class="clear-stats">
-    <div class="cs-item"><div class="cs-num" id="co-time">-</div><div class="cs-label">タイム</div></div>
-    <div class="cs-item"><div class="cs-num" id="co-mistake">-</div><div class="cs-label">ミス</div></div>
-  </div>
-  <button class="clear-btn" onclick="closeClearOverlay()">PLAY AGAIN</button>
-</div>
 
 </body>
 </html>
